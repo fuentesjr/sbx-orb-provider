@@ -69,29 +69,40 @@ message, and deletes it when you delete the thread.
 
 Every `./install.sh` command needs `ORB_PIN_FILE` set to the absolute path
 of the pin file. The examples assume you exported it, as install step 5
-does.
+does. The reasons behind each step are in
+[docs/design-notes.md](docs/design-notes.md).
 
 ### Install
 
 You need:
 
-- An x86-64 Linux host with systemd, and a user `agent` with the home
-  directory `/home/agent`. The scripts and units use both names as written.
-- An admin user with `sudo` to run `install.sh`, plus `curl` and `python3`.
-- sbx, with its global network policy set to Balanced. The host needs no
-  Docker of its own: the template is built inside a throwaway sandbox.
-- 25 GB free on `/home/agent` for the template build.
-- A self-hosted orb provider and its token, created in Amp.
+- An x86-64 Linux host with systemd, `curl` and `python3`.
+- A user named `agent` with the home directory `/home/agent`. The scripts
+  and units use both names as written.
+- An admin user with `sudo`. Run every step below as that user, from a
+  clone of this repo.
+- sbx, usable by `agent`, with its default global network policy
+  (Balanced). The host needs no Docker of its own.
+- 25 GB free on `/home/agent`.
+- A self-hosted orb provider and its token, created in Amp
+  ([Amp's docs](https://ampcode.com/docs/orbs/self-hosted)).
 
 Steps:
 
-1. Run the sbx daemon as its own unit, `sbx-daemon.service`.
-   [examples/sbx-daemon.service](examples/sbx-daemon.service) is a starting
-   point for a host that runs nothing else on sbx.
+1. Run the sbx daemon as its own unit, `sbx-daemon.service`. If the host
+   runs nothing else on sbx, start from
+   [examples/sbx-daemon.service](examples/sbx-daemon.service):
+
+   ```sh
+   sudo cp examples/sbx-daemon.service /etc/systemd/system/
+   sudo systemctl daemon-reload
+   sudo systemctl enable --now sbx-daemon
+   ```
+
 2. Enable sbx's experimental UDP egress, which Amp's Desktop needs:
 
    ```sh
-   sudo -u agent sbx settings set feature.udp-egress true
+   sudo -u agent -H sbx settings set feature.udp-egress true
    ```
 
 3. Store the provider token as an encrypted credential. With TPM binding,
@@ -104,9 +115,14 @@ Steps:
 
 4. Write the first pin file by hand. Copy
    [examples/amp-orb.pin.example](examples/amp-orb.pin.example) to where
-   the host keeps its configuration, not into this repo. Its values are
-   placeholders, so replace them as the [pin format](#pin-file) describes.
-   These commands print the current upstream CLI version and image digest:
+   the host keeps its configuration, not into this repo, and replace all
+   four placeholder values:
+
+   - `amp_cli`: the version the first command prints.
+   - `digest`: the `sha256:...` value the second command prints.
+   - `patch`: the value of `ORB_PATCH_REV` in `install.sh`.
+   - `template`: `localhost/amp-orb:<first 12 characters of the digest
+     after sha256:>-p<patch>`.
 
    ```sh
    curl -fsS https://static.ampcode.com/cli/cli-version.txt
@@ -115,6 +131,9 @@ Steps:
      https://us-central1-docker.pkg.dev/v2/amp-prod-0/amp-orb/amp-orb/manifests/latest |
      grep -i '^docker-content-digest'
    ```
+
+   If `template` doesn't match `digest` and `patch`, step 5 stops and
+   prints the value it expects.
 
 5. Install the Amp CLI, build the template, and install the scripts, the
    units and the canary timer:
@@ -132,7 +151,8 @@ Steps:
 
 7. In Amp, open the provider's **Edit** dialog and define the orb types
    `large` (default) and `small`.
-8. Check the result:
+8. Check the result. `canary-run` takes a few minutes and ends with
+   `canary passed`:
 
    ```sh
    ./install.sh status canary-run
@@ -154,15 +174,9 @@ Optional, and left to the host:
 
 To move to the latest Amp CLI and orb image:
 
-1. Run `./install.sh update-orbs`. It:
-   - builds a candidate template and fetches the candidate CLI, changing
-     nothing live;
-   - runs the dispatch dry run on the candidate, and switches only if the
-     dry run passes;
-   - restarts the provider only if the CLI version changed, which pauses
-     running orbs;
-   - rolls back by itself if the provider doesn't start on the new CLI
-     within 30 seconds.
+1. Run `./install.sh update-orbs`. It switches only if the dry run passes
+   on the new versions. If the CLI version changed, it restarts the
+   provider, which pauses running orbs.
 2. Commit the pin file and the previous pin (`$ORB_PIN_FILE.previous`)
    wherever the host keeps them.
 3. [Refresh snapshots](#refresh-snapshots), or new threads keep booting the
@@ -172,22 +186,17 @@ To hold one part at its pinned version, set `UPDATE_IMAGE=keep` (Amp's
 image digest) or `UPDATE_CLI=keep`. A higher `ORB_PATCH_REV` still builds a
 new template.
 
-To go back, run `./install.sh rollback-orbs`. It swaps the current and
-previous pins, CLI binary and template included. Run it again to roll
-forward.
+To go back, run `./install.sh rollback-orbs`, then commit both pin files
+again. Run it a second time to roll forward.
 
-The Amp CLI's self-update is off on the host, so the CLI changes only when
-you run `update-orbs` or `rollback-orbs`. The amp inside each orb isn't
-pinned: Amp's bootstrap updates it.
+Don't update the host's Amp CLI any other way: its self-update is off, and
+the drift check fails if the installed version isn't the pinned one.
 
 ### Refresh snapshots
 
-Amp saves a project snapshot at the pause after repository setup, and new
-threads in that project boot from it. They get the image the snapshot was
-taken from, not the current pin, and the host can't delete Amp's side of a
-snapshot.
-
-After an image update, or after a change to a repo's `.agents/setup`:
+New threads boot from their project's snapshot, which keeps the image and
+the setup it was taken with. So after an image update, or after a change to
+a repo's `.agents/setup`:
 
 1. Wherever you use the Amp CLI, delete Amp's snapshots for the project:
 
@@ -199,8 +208,8 @@ After an image update, or after a change to a repo's `.agents/setup`:
    doesn't list snapshot templates.
 
    ```sh
-   sudo -u agent sbx template ls
-   sudo -u agent sbx template rm --force localhost/amp-orb-snapshot:<id>
+   sudo -u agent -H sbx template ls
+   sudo -u agent -H sbx template rm --force localhost/amp-orb-snapshot:<id>
    ```
 
 The next thread boots the pinned template, reruns setup, and saves a new
@@ -231,8 +240,6 @@ longer exists in Amp. Check each orb against your live threads.
 |---|---|
 | Restart `amp-orb-provider` | Running orbs pause. Each resumes on its thread's next message. The sbx daemon isn't touched. |
 | Restart or stop `sbx-daemon` | **Every sandbox on the host stops**, and the provider stops or restarts with it. |
-
-The provider depends on `sbx-daemon.service` but doesn't own it.
 
 ## Reference
 
