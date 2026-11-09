@@ -57,7 +57,7 @@ AMP_HOSTS=ampcode.com,static.ampcode.com,tunnel.ampcode.com
 AMP_UDP_RELAYS=104.30.0.0/15
 
 # The patched template. Amp's stock image can't run under sbx
-# (FINDINGS.md, step 4). setup.sh installs the pin next to this script.
+# (FINDINGS.md, step 4). install.sh installs the pin next to this script.
 ORB_PIN=${ORB_PIN:-$(dirname "$(readlink -f "$0")")/amp-orb.pin}
 
 START=$SECONDS
@@ -77,7 +77,7 @@ sandbox_exists() { sbx ls -q | grep -qxF -- "$ORB_ID"; }
 # (sbx's long-running@1 would be cleaner but needs a v3 workload kit; FINDINGS.)
 KEEPALIVE_DIR=${KEEPALIVE_DIR:-$HOME/orb/run}
 keepalive_pidfile() { printf '%s/%s.pid' "$KEEPALIVE_DIR" "$ORB_ID"; }
-# Orb type and size as created, for ./setup.sh status (sbx doesn't keep it).
+# Orb type and size as created, for ./install.sh status (sbx doesn't keep it).
 typefile() { printf '%s/%s.type' "$KEEPALIVE_DIR" "$ORB_ID"; }
 
 # PID of this orb's keep-alive if it is alive and really ours (guards PID reuse).

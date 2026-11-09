@@ -79,7 +79,7 @@ write_pin() {
   cat >"$1" <<EOF
 # Amp orb stack this host runs: Amp's orb image (by digest) + the patch
 # revision on top, and the host's Amp CLI version (provider). Written by
-# ./setup.sh update-orbs; read by setup.sh, the dispatch and the canary.
+# ./install.sh update-orbs; read by install.sh, the dispatch and the canary.
 # template = localhost/amp-orb:<first 12 of digest>-p<patch>
 digest=$2
 patch=$ORB_PATCH_REV
@@ -384,7 +384,7 @@ update_orbs() {
   as_agent timeout -k 5 60 "$HOST_ORB/drift.sh" </dev/null || true
   prune_orb_templates
   echo "switched to $new_cli / $(pin_get template). Commit $AMP_ORB_PIN_FILE and $AMP_ORB_PIN_PREVIOUS."
-  echo "rollback: ./setup.sh rollback-orbs"
+  echo "rollback: ./install.sh rollback-orbs"
 }
 
 # Swap current and previous (so running it twice rolls forward again).
@@ -426,7 +426,7 @@ prune_orb_templates() {
   keep_cur=$(pin_get template "$AMP_ORB_PIN_FILE")
   keep_prev=$(pin_get template "$AMP_ORB_PIN_PREVIOUS" 2>/dev/null || true)
   if as_agent sbx ls -q </dev/null | grep -q '^amp-'; then
-    echo "orb sandboxes exist; not pruning old templates (see ./setup.sh status)"
+    echo "orb sandboxes exist; not pruning old templates (see ./install.sh status)"
     return
   fi
   for t in $(as_agent sbx template ls -q </dev/null | grep '^localhost/amp-orb:' || true); do

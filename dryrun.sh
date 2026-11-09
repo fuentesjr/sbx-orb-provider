@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Local dry run of the orb dispatch, no Amp involved. Installed by setup.sh as
+# Local dry run of the orb dispatch, no Amp involved. Installed by install.sh as
 # ~agent/orb/dryrun.sh; run as agent with stdin closed (sbx exec reads stdin):
 #   sudo -u agent -H ~agent/orb/dryrun.sh </dev/null
 # Uses a fake ORB_TOKEN, so `amp orb bootstrap` fails auth; that is expected.

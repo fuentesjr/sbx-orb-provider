@@ -4,7 +4,7 @@ Why the orb provider is built the way it is: findings, test logs and numbers
 from getting Amp's self-hosted orbs running under Docker Sandboxes (sbx).
 Moved here from the notebook of the host this first ran on, with
 host-specific and credential notes left behind. "FINDINGS" in script comments
-means this file, and `./setup.sh` in script comments means `./install.sh`.
+means this file.
 "The operator" is the person who runs the host.
 
 ## Phase 2 work
@@ -13,7 +13,7 @@ means this file, and `./setup.sh` in script comments means `./install.sh`.
   starts `$ORB_LOW_DISK_ALERT_UNIT` (set in an `Environment=` drop-in on the
   provider unit) and skips the alert when it's unset.
 - **Stale comments.** Phase 1 kept scripts and the provider unit byte-identical,
-  so comments still say `FINDINGS`, `setup.sh` and `orb/amp-orb.pin`.
+  so comments still say `FINDINGS` and `orb/amp-orb.pin`.
 - **Done: neutral names.** Canary units are `amp-orb-canary.*`; templates
   are `localhost/amp-orb*`, a namespace that points at no real registry
   (the real guard is the dispatch's `--pull never`). Older entries below

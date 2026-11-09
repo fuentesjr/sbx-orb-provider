@@ -14,7 +14,7 @@ WorkingDirectory=/home/agent
 # amp self-updates into ~/.amp/bin; with it first on PATH the provider sees the
 # update as its own binary instead of logging "amp on PATH differs".
 Environment=PATH=/home/agent/.amp/bin:/usr/local/bin:/usr/bin:/bin
-# Updates happen only via ./setup.sh update-orbs (pinned in orb/amp-orb.pin);
+# Updates happen only via ./install.sh update-orbs (pinned in orb/amp-orb.pin);
 # ~/.config/amp/settings.json also has "amp.updates.mode": "disabled".
 Environment=AMP_SKIP_UPDATE_CHECK=1
 # Decrypted by systemd into $CREDENTIALS_DIRECTORY, readable only by this service.

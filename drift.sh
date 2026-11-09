@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Version-drift check for the orb stack, run as agent (canary, ./setup.sh status).
+# Version-drift check for the orb stack, run as agent (canary, ./install.sh status).
 # FAIL (exit 1) only when something is actually wrong; a newer upstream Amp
 # CLI or orb image is reported as INFO, since updates happen on the operator's schedule
-# via ./setup.sh update-orbs.
+# via ./install.sh update-orbs.
 set -uo pipefail
 PIN=${ORB_PIN:-$HOME/orb/amp-orb.pin}
 REPO=us-central1-docker.pkg.dev/amp-prod-0/amp-orb/amp-orb
@@ -18,7 +18,7 @@ digest=$(pin digest) template=$(pin template) cli=$(pin amp_cli)
 
 # 1. pinned template present locally
 if sbx template ls -q </dev/null | grep -qxF "$template"; then ok "orb template $template loaded"
-else bad "orb template $template missing (./setup.sh orb-image)"; fi
+else bad "orb template $template missing (./install.sh orb-image)"; fi
 
 # 2. pinned image still resolvable upstream (a rebuild or new machine needs it)
 code=$(curl -fsS -o /dev/null -w '%{http_code}' -H 'Accept: application/vnd.oci.image.index.v1+json' \
@@ -103,6 +103,6 @@ sbx settings get feature.udp-egress </dev/null 2>/dev/null | grep -q '"enabled":
 latest_cli=$(curl -fsS https://static.ampcode.com/cli/cli-version.txt 2>/dev/null || true)
 latest_img=$(curl -fsS -o /dev/null -D - -H 'Accept: application/vnd.oci.image.index.v1+json' \
   "https://${REPO%%/*}/v2/${REPO#*/}/manifests/latest" 2>/dev/null | tr -d '\r' | awk -F': ' 'tolower($1)=="docker-content-digest"{print $2}')
-[[ -n $latest_cli && $latest_cli != "$cli" ]] && info "newer Amp CLI upstream: $latest_cli (./setup.sh update-orbs)"
-[[ -n $latest_img && $latest_img != "$digest" ]] && info "newer orb image upstream: $latest_img (./setup.sh update-orbs)"
+[[ -n $latest_cli && $latest_cli != "$cli" ]] && info "newer Amp CLI upstream: $latest_cli (./install.sh update-orbs)"
+[[ -n $latest_img && $latest_img != "$digest" ]] && info "newer orb image upstream: $latest_img (./install.sh update-orbs)"
 exit $rc
