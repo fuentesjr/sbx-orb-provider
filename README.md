@@ -26,8 +26,9 @@ This README covers two jobs: [using an orb](#use-an-orb) and
 
 ## Use an orb
 
-- **Web:** New Thread → the provider chip → your provider under Self-Hosted
-  → optionally an orb type.
+- **Web:** New Thread → the **Orb** chip → **Default ›** on the Orb row →
+  under **Self-Hosted**, pick **\<provider> · small** or
+  **\<provider> · large**.
 - **CLI:**
 
   ```sh
