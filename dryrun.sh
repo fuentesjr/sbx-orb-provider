@@ -211,7 +211,7 @@ echo "ORB_TYPE=bogus: warned and used large: yes"
 run delete
 
 step "9b. stale provider override: ORB_IMAGE = previous template must still get the pin"
-PREV=$(sed -n 's/^template=//p' ~/orb/amp-orb.pin.previous 2>/dev/null)
+PREV=$(sed -n 's/^template=//p' ~/orb/amp-orb.pin.previous 2>/dev/null || true)
 if [[ -n $PREV && $PREV != "$PINNED" ]] && sbx template ls -q | grep -qxF "$PREV"; then
   run spawn ORB_IMAGE="$PREV" ORB_TYPE=large 2>&1 | tee /tmp/dryrun.9b >&2
   grep -q "WARNING: ORB_IMAGE names $PREV, not the pinned $PINNED" /tmp/dryrun.9b || fail "no warning for stale ORB_IMAGE"
