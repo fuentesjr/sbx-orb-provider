@@ -1,0 +1,19 @@
+[Unit]
+Description=Daily orb canary (dispatch dry run + version drift)
+# Run only against the managed daemon. Not Requisite=: a unit skipped that way
+# never enters the failed state, so OnFailure= would not alert. ExecStartPre
+# below fails the unit instead, before any sbx call could start a daemon here.
+After=sbx-daemon.service
+
+[Service]
+Type=oneshot
+User=agent
+Group=agent
+WorkingDirectory=/home/agent
+Environment=PATH=/home/agent/.amp/bin:/usr/local/bin:/usr/bin:/bin
+ExecStartPre=/usr/bin/systemctl is-active --quiet sbx-daemon.service
+ExecStart=/home/agent/orb/canary.sh
+# The dry run takes ~2.5 min; keep-alives it starts die with this unit.
+TimeoutStartSec=20min
+NoNewPrivileges=yes
+PrivateTmp=yes

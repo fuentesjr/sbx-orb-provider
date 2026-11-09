@@ -1,0 +1,28 @@
+# Starting point for a host that runs only the orb provider on sbx: the sbx
+# daemon as its own unit, so restarting the provider leaves it and its
+# sandboxes alone. Restarting or stopping THIS unit stops every sandbox.
+# It has no guard against a daemon a client started elsewhere while this unit
+# was down, and none for readiness; add those if your host needs them.
+[Unit]
+Description=sbx daemon (sandboxd) for agent
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+User=agent
+Group=agent
+WorkingDirectory=/home/agent
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/sbx daemon start
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=180
+# SIGTERM to the daemon first, so it shuts its sandboxes down.
+KillMode=mixed
+TimeoutStopSec=120
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target

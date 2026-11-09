@@ -1,0 +1,31 @@
+[Unit]
+Description=Amp self-hosted orb provider (launcher; orbs run in sbx sandboxes)
+Documentation=https://ampcode.com/docs/orbs/self-hosted
+Wants=network-online.target
+# The sbx daemon is its own unit (shared with the runner launcher); this one never
+# starts or owns it, so restarting this one leaves it and its sandboxes alone.
+Requires=sbx-daemon.service
+After=network-online.target sbx-daemon.service
+
+[Service]
+User=agent
+Group=agent
+WorkingDirectory=/home/agent
+# amp self-updates into ~/.amp/bin; with it first on PATH the provider sees the
+# update as its own binary instead of logging "amp on PATH differs".
+Environment=PATH=/home/agent/.amp/bin:/usr/local/bin:/usr/bin:/bin
+# Updates happen only via ./setup.sh update-orbs (pinned in orb/amp-orb.pin);
+# ~/.config/amp/settings.json also has "amp.updates.mode": "disabled".
+Environment=AMP_SKIP_UPDATE_CHECK=1
+# Decrypted by systemd into $CREDENTIALS_DIRECTORY, readable only by this service.
+LoadCredentialEncrypted=amp-orb-provider-token:/etc/credstore.encrypted/amp-orb-provider-token
+ExecStart=/home/agent/orb/provider.sh
+Restart=always
+RestartSec=10
+# Outbound only; launcher, not a workload.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target

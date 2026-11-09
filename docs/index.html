@@ -1,0 +1,723 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="How the sbx orb provider runs Amp orbs as Docker Sandboxes microVMs on a home server.">
+<title>sbx Orb Provider</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=EB+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: an engraved-instrument manual. One reading column (~70ch) with wide figures,
+   a night-sky frontispiece holding the illustration, a sticky contents rail on wide screens.
+   Light = parchment and sepia ink; dark = the night sky of the frontispiece. */
+:root {
+  --bg: #EFE4CB;          /* parchment */
+  --surface: #F8F1DF;
+  --fg: #2B1F13;          /* sepia ink */
+  --muted: #6B5840;
+  --line: #C3AB80;        /* brass rule */
+  --accent: #A8571A;      /* the orb's amber glow: microVMs and what lives in them */
+  --accent-soft: #F3DCB4;
+  --amp: #2D4A70;         /* Amp's side: night-sky blue */
+  --amp-soft: #DCE3EC;
+  --deny: #8E2E22;        /* oxblood */
+  --deny-soft: #F2D7CF;
+  --code-bg: #E6D8B9;
+  --night: #141C2C;       /* frontispiece band, same in both themes */
+  --night-fg: #F1E4C6;
+  --night-muted: #C2AE86;
+  --gold: #D9A55C;
+  --font-display: "Cinzel", "Trajan Pro", "Times New Roman", serif;
+  --font-body: "EB Garamond", "Garamond", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111827; --surface: #18213A; --fg: #ECDFC2; --muted: #AE9C7A; --line: #4A4A52;
+    --accent: #EAA458; --accent-soft: #3A2A17; --amp: #9FBADF; --amp-soft: #1E2C46;
+    --deny: #E58C78; --deny-soft: #3B201C; --code-bg: #1D2840; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111827; --surface: #18213A; --fg: #ECDFC2; --muted: #AE9C7A; --line: #4A4A52;
+  --accent: #EAA458; --accent-soft: #3A2A17; --amp: #9FBADF; --amp-soft: #1E2C46;
+  --deny: #E58C78; --deny-soft: #3B201C; --code-bg: #1D2840; color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg);
+  font: 18px/1.6 var(--font-body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 0 64px;
+}
+.wrap { max-width: 1180px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: 40px; }
+@media (min-width: 1100px) { .wrap { grid-template-columns: 210px minmax(0, 1fr); } }
+
+/* Contents rail */
+nav.toc { font-size: 16px; }
+nav.toc h2 { font: 600 12px/1 var(--font-display); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin: 0 0 14px; }
+nav.toc ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+nav.toc a { color: var(--muted); text-decoration: none; }
+nav.toc a:hover, nav.toc a:focus-visible { color: var(--accent); }
+@media (min-width: 1100px) { nav.toc { position: sticky; top: calc(24px + env(safe-area-inset-top, 0px)); align-self: start; padding-top: 56px; } }
+@media (max-width: 1099px) { nav.toc { display: none; } }
+
+main { min-width: 0; }
+/* Frontispiece: the night sky from the illustration, the same in both themes */
+header.hero {
+  margin-block: 28px 8px;
+  background: var(--night) radial-gradient(120% 90% at 85% 0%, #23314d 0%, transparent 60%);
+  color: var(--night-fg);
+  border: 1px solid var(--gold);
+  outline: 1px solid var(--gold); outline-offset: -7px;
+  border-radius: 6px;
+  padding: clamp(22px, 4vw, 44px);
+  display: grid; grid-template-columns: minmax(0, 1fr); gap: 28px; align-items: center;
+}
+@media (min-width: 880px) { header.hero { grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); } }
+.eyebrow { font: 500 13px/1 var(--font-mono); color: var(--gold); letter-spacing: .02em; margin: 0 0 18px; }
+h1 { font: 700 clamp(36px, 5.2vw, 58px)/1.05 var(--font-display); letter-spacing: .02em; margin: 0 0 20px; text-wrap: balance; color: var(--night-fg); }
+.lede { font-size: 20px; line-height: 1.55; max-width: 60ch; margin: 0; }
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px 24px; margin: 28px 0 0; padding: 16px 0 0; list-style: none; font-size: 15px; color: var(--night-muted); border-top: 1px solid rgba(217,165,92,.45); }
+.facts b { display: block; color: var(--night-fg); font-weight: 500; font-family: var(--font-mono); font-size: 13.5px; }
+.plate { margin: 0; }
+.plate img { display: block; width: 100%; max-width: 520px; margin-inline: auto; height: auto; border: 1px solid var(--gold); border-radius: 3px; box-shadow: 0 10px 40px rgba(0,0,0,.45); }
+.plate figcaption { color: var(--night-muted); font-size: 15px; margin: 12px auto 0; max-width: 520px; }
+.plate figcaption b { color: var(--night-fg); }
+.hero a { color: var(--gold); }
+
+section { padding-block: 44px 8px; border-top: 3px double var(--line); }
+h2 { font: 600 28px/1.2 var(--font-display); letter-spacing: .02em; margin: 0 0 16px; text-wrap: balance; }
+h3 { font: 600 20px/1.3 var(--font-body); margin: 28px 0 8px; }
+p, ul, ol { max-width: 70ch; }
+p { margin: 0 0 14px; }
+ul, ol { margin: 0 0 16px; padding-left: 1.3em; }
+li { margin-bottom: 6px; }
+a { color: var(--accent); }
+code { font: 0.88em/1.4 var(--font-mono); background: var(--code-bg); padding: .1em .35em; border-radius: 4px; overflow-wrap: anywhere; }
+pre { font: 13.5px/1.55 var(--font-mono); background: var(--code-bg); padding: 14px 16px; border-radius: 8px; overflow-x: auto; max-width: 78ch; margin: 0 0 18px; }
+pre code { background: none; padding: 0; overflow-wrap: normal; }
+strong { font-weight: 600; }
+
+/* Figures */
+figure { margin: 24px 0 28px; }
+.fig-scroll { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); outline: 1px solid var(--line); outline-offset: -6px; border-radius: 4px; padding: 20px; }
+.fig-scroll svg { display: block; width: 100%; min-width: 640px; height: auto; color: var(--fg); }
+figcaption { font-size: 16px; font-style: italic; color: var(--muted); margin-top: 10px; max-width: 78ch; }
+figcaption b { font-style: normal; }
+figcaption b { color: var(--fg); font-weight: 600; }
+
+/* SVG drawing classes (all colors from tokens) */
+.d-host { fill: none; stroke: var(--line); stroke-width: 1.5; }
+.d-box { fill: var(--surface); stroke: var(--line); stroke-width: 1.5; }
+.d-vm { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5; }
+.d-vm-dash { fill: var(--surface); stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 5 4; }
+.d-amp { fill: var(--amp-soft); stroke: var(--amp); stroke-width: 1.5; }
+.d-deny { fill: var(--deny-soft); stroke: var(--deny); stroke-width: 1.5; }
+.d-mute { fill: var(--bg); stroke: var(--line); stroke-width: 1.5; stroke-dasharray: 4 4; }
+.d-t { fill: var(--fg); font: 600 15px var(--font-body); }
+.d-s { fill: var(--muted); font: 400 13.5px var(--font-body); }
+.d-m { fill: var(--fg); font: 500 12px var(--font-mono); }
+.d-k { fill: var(--muted); font: 600 11px var(--font-display); letter-spacing: .1em; text-transform: uppercase; }
+.d-ta { fill: var(--amp); }
+.d-tv { fill: var(--accent); }
+.d-td { fill: var(--deny); }
+.d-line { fill: none; stroke: var(--muted); stroke-width: 1.5; }
+.d-line-a { fill: none; stroke: var(--amp); stroke-width: 1.75; }
+.d-line-a-dash { fill: none; stroke: var(--amp); stroke-width: 1.5; stroke-dasharray: 5 4; }
+.d-line-v { fill: none; stroke: var(--accent); stroke-width: 1.75; }
+.d-line-d { fill: none; stroke: var(--deny); stroke-width: 1.75; stroke-dasharray: 5 4; }
+.d-head { fill: var(--muted); }
+.d-head-a { fill: var(--amp); }
+.d-head-v { fill: var(--accent); }
+.d-head-d { fill: var(--deny); }
+
+/* Tables */
+.table-scroll { overflow-x: auto; margin: 8px 0 22px; }
+table { border-collapse: collapse; font-size: 16.5px; min-width: 560px; width: 100%; max-width: 900px; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font: 600 12px/1.3 var(--font-display); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); border-bottom: 3px double var(--line); }
+td { font-variant-numeric: tabular-nums; }
+
+/* Spawn steps */
+ol.steps { list-style: none; padding: 0; counter-reset: s; display: grid; gap: 12px; max-width: 78ch; }
+ol.steps li { counter-increment: s; display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 12px; margin: 0; }
+ol.steps li::before { content: counter(s); font: 600 15px/30px var(--font-display); color: var(--accent); border: 1.5px solid var(--accent); outline: 1px solid var(--accent-soft); outline-offset: 2px; border-radius: 50%; width: 32px; height: 32px; text-align: center; }
+ol.steps b { display: block; font-weight: 600; }
+ol.steps span { color: var(--muted); font-size: 17px; }
+
+/* Orb type cards */
+.types { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; max-width: 760px; margin: 8px 0 18px; }
+.type { background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 16px 18px; min-width: 0; }
+.type.default { border-color: var(--accent); outline: 1px solid var(--accent); outline-offset: -5px; }
+.type h3 { margin: 0 0 4px; font: 700 24px/1.1 var(--font-display); letter-spacing: .03em; }
+.type .tag { font: 500 12px var(--font-mono); color: var(--accent); }
+.type dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; margin: 12px 0 10px; font-size: 16px; }
+.type dt { color: var(--muted); }
+.type dd { margin: 0; font-family: var(--font-mono); font-size: 13.5px; }
+.type p { font-size: 16px; color: var(--muted); margin: 0; }
+
+/* Adaptation list */
+.fixes { display: grid; gap: 0; max-width: 900px; margin: 8px 0 18px; border-top: 1px solid var(--line); }
+.fix { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px 24px; padding: 14px 0; border-bottom: 1px solid var(--line); }
+@media (min-width: 760px) { .fix { grid-template-columns: 200px minmax(0, 1fr) minmax(0, 1fr); } }
+.fix h3 { margin: 0; font-size: 18px; }
+.fix .where { font: 500 12px var(--font-mono); color: var(--accent); display: block; margin-top: 2px; }
+.fix p { margin: 0; font-size: 16.5px; }
+.fix p.sym { color: var(--muted); }
+.fix p.sym::before { content: "Without it: "; font-weight: 600; color: var(--deny); }
+.fix p.cure::before { content: "Fix: "; font-weight: 600; color: var(--accent); }
+
+.note { border-left: 3px solid var(--amp); padding: 4px 0 4px 16px; max-width: 70ch; margin: 0 0 18px; }
+.note p { margin: 0; }
+
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+html { scroll-behavior: smooth; }
+section[id] { scroll-margin-top: calc(16px + env(safe-area-inset-top, 0px)); }
+footer { margin-top: 40px; padding-top: 20px; border-top: 3px double var(--line); font-size: 15px; font-style: italic; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <nav class="toc" aria-label="On this page">
+    <h2>On this page</h2>
+    <ol>
+      <li><a href="#picture">The big picture</a></li>
+      <li><a href="#lifecycle">An orb's life</a></li>
+      <li><a href="#spawn">What a spawn does</a></li>
+      <li><a href="#inside">Inside an orb</a></li>
+      <li><a href="#types">Orb types</a></li>
+      <li><a href="#network">Network</a></li>
+      <li><a href="#adaptations">Making Amp's image fit</a></li>
+      <li><a href="#snapshots">Snapshots</a></li>
+      <li><a href="#updates">Updates and rollback</a></li>
+      <li><a href="#health">Keeping it healthy</a></li>
+      <li><a href="#security">Security model</a></li>
+      <li><a href="#commands">Commands</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <header class="hero">
+      <div>
+        <p class="eyebrow">fuentesjr/sbx-orb-provider · dispatch.sh</p>
+        <h1>sbx Orb Provider</h1>
+        <p class="lede">Amp keeps your threads in the cloud, but the agent itself, with its shell, files and tests, runs in a machine called an <strong>orb</strong>. This provider puts those orbs on your own host, such as a home server: every Amp thread gets its own Docker Sandboxes microVM, with its own kernel, its own Docker and a network limited to an allowlist.</p>
+        <ul class="facts">
+          <li>Provider name <b>&lt;provider-name&gt;</b></li>
+          <li>Isolation <b>sbx microVM per thread</b></li>
+          <li>Job time <b>0.1–9 s of a 5-min budget</b></li>
+          <li>Inbound from the internet <b>none</b></li>
+        </ul>
+      </div>
+      <figure class="plate">
+        <img src="images/orb-overview.jpg" width="1122" height="1402" alt="Illustration of the flow, with Amp's servers labelled threads and coordination: 0, at boot, the home server's provider connects out to Amp's servers over HTTPS and the connection stays open, waiting; 1, when you prompt, Amp sends spawn, pause and delete jobs over that open line; 2, dispatch.sh turns each job into a Docker sbx microVM holding the self-hosted orb, where the agent and its tools run; 3, the orb connects out to Amp on its own. A banner reads: no inbound ports.">
+        <figcaption><b>Step 0 happens once, at boot; steps 1–3 happen for every thread.</b> Every connection starts from the host; nothing ever dials in.</figcaption>
+      </figure>
+    </header>
+
+    <section id="picture">
+      <h2>The big picture</h2>
+      <p>Amp's <a href="https://ampcode.com/docs/orbs/self-hosted">self-hosted orbs</a> split the work in two. Amp keeps the thread and coordinates it. The agent process itself runs inside the orb, on our hardware. Our side also runs a small program, the <strong>provider</strong>, that Amp hands jobs to: start this orb, pause it, delete it. How a job becomes a machine is up to a script we write, the <strong>dispatch</strong>. Ours turns every job into Docker Sandboxes (<code>sbx</code>) commands.</p>
+
+      <h3>What happens when you press Enter</h3>
+      <p>Amp can't reach into the house, so the house keeps a line open to Amp in advance, like a phone call placed hours ago and never hung up. Amp can't call you, but it can talk on the line you opened.</p>
+      <ol class="steps" style="counter-reset: s -1">
+        <li><div><b>Long before: the host boots.</b><span>The provider service starts, connects out to Amp, and stays connected, waiting for jobs. This happens once, and it's already done when you sit down to type.</span></div></li>
+        <li><div><b>You press Enter.</b><span>Amp picks the provider you chose and sends a <code>spawn</code> job down the line that's already open. No new connection is needed.</span></div></li>
+        <li><div><b>The dispatch builds the orb.</b><span><code>dispatch.sh</code> creates the sbx microVM (about 2 seconds from a local template) and starts Amp's bootstrap inside it.</span></div></li>
+        <li><div><b>The orb dials out.</b><span>The bootstrap opens its own outbound connection to Amp. The agent starts in the orb and works over that connection: Amp coordinates and stores the transcript, while the shell, files and tests run here.</span></div></li>
+      </ol>
+      <p>That's why orbs stop working if the provider isn't running: without the open line, Amp has no way to deliver step 1.</p>
+
+      <figure>
+        <div class="fig-scroll">
+          <svg viewBox="0 0 1000 470" role="img" aria-label="The host opens two kinds of outbound connection to Amp: one from the orb provider and one from each orb. Over them, Amp sends jobs to the provider and tool calls to each orb, and results come back. On the host, the provider drives the shared sbx daemon, which runs one microVM per orb alongside the separate GitHub runner jobs.">
+            <defs>
+              <marker id="ah-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-head-a"/></marker>
+              <marker id="ah-m" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-head"/></marker>
+              <marker id="ah-v" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-head-v"/></marker>
+            </defs>
+
+            <!-- Amp cloud -->
+            <rect x="20" y="40" width="200" height="390" rx="12" class="d-amp"/>
+            <text x="40" y="70" class="d-k d-ta">Amp · cloud</text>
+            <text x="40" y="104" class="d-t">Thread</text>
+            <text x="40" y="122" class="d-s">messages, history, diffs</text>
+            <text x="40" y="160" class="d-t">Coordination</text>
+            <text x="40" y="178" class="d-s">starts, pauses, resumes</text>
+            <text x="40" y="216" class="d-t">Job queue</text>
+            <text x="40" y="234" class="d-s">for your provider</text>
+            <text x="40" y="350" class="d-t">Transcript</text>
+            <text x="40" y="368" class="d-s">stored with the thread</text>
+
+            <!-- host -->
+            <rect x="350" y="20" width="630" height="430" rx="14" class="d-host"/>
+            <text x="370" y="48" class="d-k">host · Ubuntu · outbound only</text>
+
+            <!-- provider unit -->
+            <rect x="370" y="68" width="290" height="124" rx="10" class="d-box"/>
+            <text x="388" y="94" class="d-m">amp-orb-provider.service</text>
+            <text x="388" y="118" class="d-t">amp orb provider</text>
+            <text x="388" y="138" class="d-s">runs dispatch.sh once per job</text>
+            <text x="388" y="158" class="d-s">token: TPM-bound systemd credential</text>
+            <text x="388" y="178" class="d-s">holds one keep-alive per running orb</text>
+
+            <!-- runner launcher -->
+            <rect x="690" y="68" width="270" height="124" rx="10" class="d-mute"/>
+            <text x="708" y="94" class="d-m">github-runner-launcher</text>
+            <text x="708" y="118" class="d-t">GitHub Actions runners</text>
+            <text x="708" y="138" class="d-s">separate code; shares the host,</text>
+            <text x="708" y="158" class="d-s">agent user, daemon and policy</text>
+
+            <!-- daemon -->
+            <rect x="370" y="228" width="590" height="56" rx="10" class="d-box"/>
+            <text x="388" y="252" class="d-m">sbx-daemon.service</text>
+            <text x="388" y="272" class="d-s">shared: owns every microVM and the global network policy; restarting it stops all of them</text>
+
+            <!-- microVMs -->
+            <rect x="370" y="318" width="180" height="108" rx="10" class="d-vm"/>
+            <text x="386" y="342" class="d-k d-tv">orb · running</text>
+            <text x="386" y="366" class="d-m">amp-&lt;thread A&gt;</text>
+            <text x="386" y="388" class="d-s">the agent, its tools, Docker</text>
+            <text x="386" y="406" class="d-s">large: 4 CPU · 8 GB</text>
+
+            <rect x="570" y="318" width="180" height="108" rx="10" class="d-vm-dash"/>
+            <text x="586" y="342" class="d-k d-tv">orb · stopped</text>
+            <text x="586" y="366" class="d-m">amp-&lt;thread B&gt;</text>
+            <text x="586" y="388" class="d-s">disk kept, no memory</text>
+            <text x="586" y="406" class="d-s">resumes on next message</text>
+
+            <rect x="780" y="318" width="180" height="108" rx="10" class="d-mute"/>
+            <text x="796" y="342" class="d-k">runner job</text>
+            <text x="796" y="366" class="d-m">ghr-job-…</text>
+            <text x="796" y="388" class="d-s">one microVM per CI job,</text>
+            <text x="796" y="406" class="d-s">deleted when it ends</text>
+
+            <!-- provider link: the host dials out (dashed); Amp pushes jobs (solid) -->
+            <line x1="370" y1="140" x2="224" y2="140" class="d-line-a-dash" marker-end="url(#ah-a)"/>
+            <text x="287" y="158" text-anchor="middle" class="d-s">dials out</text>
+            <line x1="224" y1="108" x2="366" y2="108" class="d-line-a" marker-end="url(#ah-a)"/>
+            <text x="287" y="98" text-anchor="middle" class="d-s">jobs</text>
+            <!-- orb link: orb dials out (dashed); tool calls and results (solid, both ways) -->
+            <line x1="370" y1="392" x2="224" y2="392" class="d-line-a-dash" marker-end="url(#ah-a)"/>
+            <text x="287" y="410" text-anchor="middle" class="d-s">dials out</text>
+            <line x1="228" y1="356" x2="366" y2="356" class="d-line-a" marker-start="url(#ah-a)" marker-end="url(#ah-a)"/>
+            <text x="287" y="336" text-anchor="middle" class="d-s">agent traffic,</text>
+            <text x="287" y="348" text-anchor="middle" class="d-s">results</text>
+
+            <!-- provider -> daemon -->
+            <line x1="515" y1="192" x2="515" y2="224" class="d-line" marker-end="url(#ah-m)"/>
+            <text x="524" y="214" class="d-s">sbx create · exec · stop · rm</text>
+            <!-- runner -> daemon -->
+            <line x1="825" y1="192" x2="825" y2="224" class="d-line" marker-end="url(#ah-m)"/>
+            <!-- daemon -> VMs -->
+            <line x1="460" y1="284" x2="460" y2="314" class="d-line-v" marker-end="url(#ah-v)"/>
+            <line x1="660" y1="284" x2="660" y2="314" class="d-line-v" marker-end="url(#ah-v)"/>
+            <line x1="870" y1="284" x2="870" y2="314" class="d-line" marker-end="url(#ah-m)"/>
+          </svg>
+        </div>
+        <figcaption><b>Amp starts the work; the host opens the connections.</b> Dashed arrows show who dials: always the host, outbound. Solid arrows show what flows over those connections: jobs to the provider, and the agent's traffic between each orb and Amp. Amp can't open a connection into the house. Separately, orbs only run while the provider runs, because the provider holds each orb's keep-alive. The runner system has separate code but shares the host, the <code>agent</code> user, the sbx daemon and its global network policy.</figcaption>
+      </figure>
+
+      <p>What leaves the house: the whole thread transcript, meaning everything the agent reads, runs and prints (file contents, command output, diffs), which goes to Amp and its model providers and is stored with the thread. What stays: the checkout, build output, Docker images and the orbs' disks.</p>
+    </section>
+
+    <section id="lifecycle">
+      <h2>An orb's life</h2>
+      <p>Amp sends only three kinds of job: <code>spawn</code>, <code>pause</code> and <code>delete</code>. Each one must be safe to repeat and finish within five minutes. The orb's ID, <code>amp-&lt;thread id&gt;</code>, doubles as the sandbox name, so a repeated job always finds the same machine.</p>
+
+      <figure>
+        <div class="fig-scroll">
+          <svg viewBox="0 0 1000 320" role="img" aria-label="State diagram. Spawn creates a running orb. Pause stops it with its disk kept; the next spawn starts it again. Delete removes it from any state. A pause that carries a snapshot ID also saves the stopped disk as a project snapshot template, and new threads in that project boot from it.">
+            <defs>
+              <marker id="lh-m" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-head"/></marker>
+              <marker id="lh-v" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-head-v"/></marker>
+              <marker id="lh-d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-head-d"/></marker>
+            </defs>
+
+            <rect x="20" y="110" width="130" height="64" rx="32" class="d-mute"/>
+            <text x="85" y="147" text-anchor="middle" class="d-t">No orb</text>
+
+            <rect x="290" y="110" width="170" height="64" rx="12" class="d-vm"/>
+            <text x="375" y="138" text-anchor="middle" class="d-t">Running</text>
+            <text x="375" y="157" text-anchor="middle" class="d-s">agent working</text>
+
+            <rect x="610" y="110" width="190" height="64" rx="12" class="d-vm-dash"/>
+            <text x="705" y="138" text-anchor="middle" class="d-t">Stopped</text>
+            <text x="705" y="157" text-anchor="middle" class="d-s">disk kept, memory gone</text>
+
+            <rect x="870" y="110" width="110" height="64" rx="32" class="d-deny"/>
+            <text x="925" y="147" text-anchor="middle" class="d-t">Deleted</text>
+
+            <rect x="610" y="236" width="190" height="64" rx="12" class="d-box"/>
+            <text x="705" y="263" text-anchor="middle" class="d-t">Project snapshot</text>
+            <text x="705" y="282" text-anchor="middle" class="d-s">a local sbx template</text>
+
+            <!-- no orb -> running -->
+            <line x1="150" y1="142" x2="286" y2="142" class="d-line-v" marker-end="url(#lh-v)"/>
+            <text x="218" y="130" text-anchor="middle" class="d-m">spawn</text>
+            <text x="218" y="162" text-anchor="middle" class="d-s">sbx create</text>
+
+            <!-- running -> stopped -->
+            <line x1="460" y1="128" x2="606" y2="128" class="d-line" marker-end="url(#lh-m)"/>
+            <text x="533" y="117" text-anchor="middle" class="d-m">pause</text>
+            <!-- stopped -> running -->
+            <line x1="610" y1="158" x2="464" y2="158" class="d-line-v" marker-end="url(#lh-v)"/>
+            <text x="537" y="180" text-anchor="middle" class="d-m">spawn</text>
+            <text x="537" y="196" text-anchor="middle" class="d-s">sbx exec starts it</text>
+
+            <!-- stopped -> deleted -->
+            <line x1="800" y1="142" x2="866" y2="142" class="d-line-d" marker-end="url(#lh-d)"/>
+            <text x="833" y="130" text-anchor="middle" class="d-m">delete</text>
+            <!-- running -> deleted -->
+            <path d="M375,110 C375,50 925,50 925,106" class="d-line-d" marker-end="url(#lh-d)"/>
+            <text x="650" y="40" text-anchor="middle" class="d-s">delete · sbx rm --force · only when the thread is deleted</text>
+
+            <!-- stopped -> snapshot -->
+            <line x1="705" y1="174" x2="705" y2="232" class="d-line" marker-end="url(#lh-m)"/>
+            <text x="715" y="205" class="d-s">pause with ORB_SNAPSHOT_ID</text>
+            <text x="715" y="221" class="d-s">→ sbx template save</text>
+            <!-- snapshot -> running (new thread) -->
+            <polyline points="610,268 375,268 375,178" class="d-line-v" marker-end="url(#lh-v)"/>
+            <text x="480" y="290" text-anchor="middle" class="d-s">a new thread in the same project boots from it</text>
+          </svg>
+        </div>
+        <figcaption><b>Pause keeps the disk; only deleting a thread deletes the orb.</b> An idle or archived thread is paused, and its next message resumes the same orb. Amp saves a project snapshot at the pause right after repository setup, so later threads skip setup.</figcaption>
+      </figure>
+
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Amp asks</th><th>The dispatch does</th></tr></thead>
+          <tbody>
+            <tr><td><code>spawn</code>, new orb</td><td>Picks the image, checks disk space, <code>sbx create</code> at the orb type's size, adds the orb's own network rules, then starts Amp's bootstrap and a keep-alive.</td></tr>
+            <tr><td><code>spawn</code>, existing orb</td><td>Skips creation; <code>sbx exec</code> starts the stopped sandbox, then the same bootstrap and keep-alive.</td></tr>
+            <tr><td><code>pause</code></td><td>Stops the keep-alive, records two health facts from the running orb, <code>sbx stop</code>. With <code>ORB_SNAPSHOT_ID</code>: <code>sbx template save</code>.</td></tr>
+            <tr><td><code>delete</code></td><td>Stops the keep-alive, <code>sbx rm --force</code>, removes the orb's state file. Its network rules go with it.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="spawn">
+      <h2>What a spawn does</h2>
+      <p>Spawn is the only job with real work in it. In order:</p>
+      <ol class="steps">
+        <li><div><b>Pick the image.</b><span>A local snapshot for <code>ORB_SNAPSHOT_ID</code> if one exists; else <code>ORB_IMAGE</code>, if it names a local snapshot template; otherwise the pinned template from <code>amp-orb.pin</code>. For the base image the pin always wins, so an old image override left over from when the provider started can't bring back an old image.</span></div></li>
+        <li><div><b>Check the disk.</b><span>It needs the Docker volume's size plus 10 GB of headroom. If space is short, a large orb gets a 10 GB volume instead and the dispatch starts the host's low-disk alert, without delaying the spawn.</span></div></li>
+        <li><div><b>Create the microVM.</b><span><code>sbx create shell --template &lt;image&gt; --pull never --cpus N --memory M</code>, with the Docker volume size set per orb. Creating from a local template takes about 2 seconds.</span></div></li>
+        <li><div><b>Open the orb's own network rules.</b><span>Amp's three hosts over TCP, plus UDP to Amp's Desktop relays, for this sandbox only. If a rule fails, the half-made sandbox is removed so a retry starts clean.</span></div></li>
+        <li><div><b>Recreate <code>/run</code>.</b><span>The orb has no systemd, so <code>systemd-tmpfiles --create --prefix=/run</code> rebuilds what the image expects there, notably <code>/run/lock</code> for Desktop. Runs on every spawn, new or resumed.</span></div></li>
+        <li><div><b>Start Amp's bootstrap, detached.</b><span><code>amp orb bootstrap</code> runs as the image's user with the short-lived <code>ORB_TOKEN</code>, under <code>setsid nohup</code>, and with sbx's placeholder <code>GH_TOKEN</code> removed so Amp's own GitHub token is used.</span></div></li>
+        <li><div><b>Hold the orb awake.</b><span>sbx stops a sandbox 30 seconds after its last session ends (observed on sbx v0.50.1). An idle <code>sbx exec &lt;orb&gt; sleep infinity</code> per orb keeps it running until the next pause.</span></div></li>
+      </ol>
+      <div class="note"><p>The keep-alives live inside the provider's service. Stopping the provider ends them, sbx stops the orbs within 30 seconds, and Amp resumes each one on its thread's next message. <strong>Orbs run only while the provider runs.</strong></p></div>
+    </section>
+
+    <section id="inside">
+      <h2>Inside an orb</h2>
+      <p>An orb is a full Linux machine with its own kernel, not a container sharing the host's. What runs inside is Amp's own orb image, pinned by digest, with a thin patch layer on top.</p>
+
+      <figure>
+        <div class="fig-scroll">
+          <svg viewBox="0 0 1000 380" role="img" aria-label="Layers of an orb. Inside the host, a microVM holds, from the bottom: Amp's orb image pinned by digest, the patch layer, the bootstrap and Docker, and the agent's tools at the top. Outside the microVM on the host sit the sbx proxy that enforces the network policy, the keep-alive session, and the orb's state files.">
+            <defs>
+              <marker id="ih-m" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-head"/></marker>
+            </defs>
+            <rect x="20" y="20" width="960" height="340" rx="14" class="d-host"/>
+            <text x="40" y="48" class="d-k">host · user agent</text>
+
+            <rect x="40" y="64" width="600" height="278" rx="12" class="d-vm"/>
+            <text x="60" y="90" class="d-k d-tv">orb = sbx microVM · own kernel</text>
+
+            <rect x="64" y="104" width="552" height="46" rx="8" class="d-box"/>
+            <text x="82" y="126" class="d-t">The agent's tools</text>
+            <text x="82" y="142" class="d-s">shell, file edits, test runs: everything the agent does happens here</text>
+
+            <rect x="64" y="160" width="268" height="58" rx="8" class="d-box"/>
+            <text x="82" y="183" class="d-t">amp orb bootstrap</text>
+            <text x="82" y="202" class="d-s">as user "user", talks to Amp</text>
+            <rect x="348" y="160" width="268" height="58" rx="8" class="d-box"/>
+            <text x="366" y="183" class="d-t">Docker inside the orb</text>
+            <text x="366" y="202" class="d-s">Postgres, Redis for test suites</text>
+
+            <rect x="64" y="228" width="552" height="46" rx="8" class="d-box"/>
+            <text x="82" y="250" class="d-t">patch layer · rev 3</text>
+            <text x="82" y="266" class="d-s">Docker-in-Docker label · cgroupfs Docker driver · /usr/bin/git → git 2.55</text>
+
+            <rect x="64" y="284" width="552" height="46" rx="8" class="d-box"/>
+            <text x="82" y="306" class="d-t">Amp's orb image · pinned by digest</text>
+            <text x="82" y="322" class="d-s">Amp's tools, Desktop, git, a "user" account with sudo</text>
+
+            <!-- host side -->
+            <rect x="700" y="80" width="260" height="72" rx="10" class="d-box"/>
+            <text x="718" y="106" class="d-t">sbx proxy</text>
+            <text x="718" y="126" class="d-s">all orb traffic passes through;</text>
+            <text x="718" y="142" class="d-s">default deny + allow rules</text>
+
+            <rect x="700" y="174" width="260" height="72" rx="10" class="d-box"/>
+            <text x="718" y="200" class="d-t">keep-alive session</text>
+            <text x="718" y="220" class="d-m">sbx exec &lt;orb&gt; sleep infinity</text>
+            <text x="718" y="238" class="d-s">in the provider's service</text>
+
+            <rect x="700" y="268" width="260" height="72" rx="10" class="d-box"/>
+            <text x="718" y="294" class="d-t">orb state files</text>
+            <text x="718" y="314" class="d-m">~/orb/run/&lt;orb&gt;.type, .pid</text>
+            <text x="718" y="332" class="d-s">size and image as created</text>
+
+            <line x1="640" y1="116" x2="696" y2="116" class="d-line" marker-end="url(#ih-m)"/>
+            <text x="668" y="108" text-anchor="middle" class="d-s">egress</text>
+            <line x1="696" y1="210" x2="644" y2="210" class="d-line" marker-end="url(#ih-m)"/>
+            <text x="668" y="202" text-anchor="middle" class="d-s">holds</text>
+          </svg>
+        </div>
+        <figcaption><b>Amp's image does the work; the patch adds only what sbx needs.</b> The patch layer is rebuilt on top of whatever digest the pin names, so updating Amp's image never loses the fixes.</figcaption>
+      </figure>
+    </section>
+
+    <section id="types">
+      <h2>Orb types</h2>
+      <p>When starting a thread you can pick a size. The types are defined in the provider's <strong>Edit</strong> dialog in Amp; the dispatch decides what each one gets. Size is fixed when the orb is created, and an unset or unknown type gets <strong>large</strong> with a warning in the log.</p>
+      <div class="types">
+        <div class="type default">
+          <span class="tag">default</span>
+          <h3>large</h3>
+          <dl><dt>CPU</dt><dd>4</dd><dt>Memory</dt><dd>8 GB</dd><dt>Docker volume</dt><dd>20 GB</dd></dl>
+          <p>Most threads: the Rails suite with Postgres and Redis on the orb's own Docker.</p>
+        </div>
+        <div class="type">
+          <span class="tag">opt-in</span>
+          <h3>small</h3>
+          <dl><dt>CPU</dt><dd>2</dd><dt>Memory</dt><dd>4 GB</dd><dt>Docker volume</dt><dd>10 GB</dd></dl>
+          <p>Light threads: docs, small scripts, no service containers.</p>
+        </div>
+      </div>
+      <p>Why set sizes at all: left alone, sbx gave each sandbox half the host's memory (observed on v0.50.1), so two orbs would take all 32 GB of the host. An idle large orb costs the host about 1–1.4 GB; a working one grows toward its 8 GB limit (one held around 4 GB).</p>
+    </section>
+
+    <section id="network">
+      <h2>What an orb can reach</h2>
+      <p>Nothing leaves an orb except through sbx's proxy, which denies by default. Two sets of rules open specific doors.</p>
+
+      <figure>
+        <div class="fig-scroll">
+          <svg viewBox="0 0 1000 360" role="img" aria-label="An orb's traffic goes through the sbx proxy. The global Balanced policy, Docker's baseline allowlist shared with runner jobs, allows AI APIs, package managers and code hosts. Per-orb rules, added at spawn and removed with the orb, allow Amp's hosts and Desktop relays. Everything else, including the home network, is blocked.">
+            <defs>
+              <marker id="nh-m" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-head"/></marker>
+              <marker id="nh-v" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-head-v"/></marker>
+              <marker id="nh-d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-head-d"/></marker>
+            </defs>
+            <rect x="20" y="138" width="150" height="84" rx="12" class="d-vm"/>
+            <text x="95" y="176" text-anchor="middle" class="d-t">orb</text>
+            <text x="95" y="196" text-anchor="middle" class="d-s">any request</text>
+
+            <rect x="240" y="138" width="170" height="84" rx="12" class="d-box"/>
+            <text x="325" y="172" text-anchor="middle" class="d-t">sbx proxy</text>
+            <text x="325" y="192" text-anchor="middle" class="d-s">default: deny</text>
+
+            <line x1="170" y1="180" x2="236" y2="180" class="d-line" marker-end="url(#nh-m)"/>
+
+            <rect x="490" y="20" width="490" height="96" rx="10" class="d-box"/>
+            <text x="510" y="46" class="d-k">Global policy · Balanced · shared with runner jobs</text>
+            <text x="510" y="72" class="d-s">Docker's baseline allowlist, about 195 rules: AI APIs,</text>
+            <text x="510" y="94" class="d-s">package managers, code hosts (rubygems.org, github.com…)</text>
+
+            <rect x="490" y="132" width="490" height="96" rx="10" class="d-vm"/>
+            <text x="510" y="158" class="d-k d-tv">Per-orb rules · added at spawn, gone with the orb</text>
+            <text x="510" y="184" class="d-m">ampcode.com · static.ampcode.com · tunnel.ampcode.com</text>
+            <text x="510" y="206" class="d-s">plus UDP to Amp's Desktop relays (experimental sbx flag)</text>
+
+            <rect x="490" y="244" width="490" height="96" rx="10" class="d-deny"/>
+            <text x="510" y="270" class="d-k d-td">Not on either list · blocked</text>
+            <text x="510" y="296" class="d-s">your home network, other sandboxes, unlisted hosts;</text>
+            <text x="510" y="318" class="d-s">Bundler and mise retry the allowed hosts and carry on</text>
+
+            <path d="M410,166 C450,166 450,68 486,68" class="d-line" marker-end="url(#nh-m)"/>
+            <text x="424" y="112" text-anchor="middle" class="d-s">allow</text>
+            <line x1="410" y1="180" x2="486" y2="180" class="d-line-v" marker-end="url(#nh-v)"/>
+            <text x="450" y="172" text-anchor="middle" class="d-s">allow</text>
+            <path d="M410,194 C450,194 450,292 486,292" class="d-line-d" marker-end="url(#nh-d)"/>
+            <text x="424" y="258" text-anchor="middle" class="d-s">deny</text>
+          </svg>
+        </div>
+        <figcaption><b>Orb-only hosts go in per-orb rules, never in the global policy.</b> Widening the global policy would widen every orb and every CI job at once.</figcaption>
+      </figure>
+
+      <p>Blocked hosts that don't break setup: <code>index.rubygems.org</code> and <code>mise.jdx.dev</code> (the tools fall back to <code>rubygems.org</code> and GitHub) and <code>cache.ruby-lang.org</code> (Ruby comes prebuilt). Chrome for Testing is also blocked, and that's an open gap: orbs can't run browser system tests yet. mise's <code>mise.run</code> installer fails here; install mise from its GitHub releases instead.</p>
+      <p><strong>Testing a block:</strong> for HTTPS, the proxy answers the connection request with <code>200</code> even for a blocked host, then returns <code>403 Forbidden</code> itself. Check the status code (<code>curl -s -o /dev/null -w '%{http_code}'</code> should print 403), not the first header line. The 403's text suggests running <code>sbx policy approval ls</code>; that's a host-side command, so an agent inside the orb can't use it. Traffic that ignores the proxy settings is still intercepted and checked, and DNS to outside resolvers is blocked.</p>
+    </section>
+
+    <section id="adaptations">
+      <h2>Making Amp's image fit sbx</h2>
+      <p>Amp's orb image assumes it boots with systemd as the first process. Under sbx the first process is sbx's own small init, so a few things the image expects never happen. Each fix below is small and lives in one place.</p>
+      <div class="fixes">
+        <div class="fix">
+          <h3>Docker-in-Docker label<span class="where">patch 1 · image</span></h3>
+          <p class="sym">sbx creates the orb without Docker privileges, then every command fails because Docker can't start.</p>
+          <p class="cure">Add the label <code>com.docker.sandboxes.start-docker=true</code>.</p>
+        </div>
+        <div class="fix">
+          <h3>Docker's cgroup driver<span class="where">patch 2 · image</span></h3>
+          <p class="sym"><code>docker run</code> in the orb fails: "systemd not running on this host".</p>
+          <p class="cure">Switch <code>/etc/docker/daemon.json</code> to the <code>cgroupfs</code> driver.</p>
+        </div>
+        <div class="fix">
+          <h3>git for hardcoded paths<span class="where">patch 3 · image</span></h3>
+          <p class="sym">Tests that call <code>/usr/bin/git</code> get Debian's 2.39 and fail.</p>
+          <p class="cure">Point <code>/usr/bin/git</code> at Amp's git 2.55.</p>
+        </div>
+        <div class="fix">
+          <h3><code>/run</code> entries<span class="where">dispatch · every spawn</span></h3>
+          <p class="sym">Desktop dock clicks fail: <code>/run/lock</code> doesn't exist.</p>
+          <p class="cure">Run <code>systemd-tmpfiles --create --prefix=/run</code> before the bootstrap.</p>
+        </div>
+        <div class="fix">
+          <h3>Staying awake<span class="where">dispatch · keep-alive</span></h3>
+          <p class="sym">sbx stops the orb 30 seconds after the detached bootstrap starts.</p>
+          <p class="cure">One idle <code>sbx exec … sleep infinity</code> per running orb.</p>
+        </div>
+        <div class="fix">
+          <h3>GitHub token<span class="where">dispatch · bootstrap</span></h3>
+          <p class="sym">sbx's placeholder <code>GH_TOKEN</code> wins, and <code>gh</code> reports "Bad credentials".</p>
+          <p class="cure">Start the bootstrap with <code>GH_TOKEN</code> and <code>GITHUB_TOKEN</code> removed.</p>
+        </div>
+        <div class="fix">
+          <h3>Desktop video<span class="where">sbx setting + per-orb rule</span></h3>
+          <p class="sym">Desktop connects but never streams; its traffic is UDP.</p>
+          <p class="cure">sbx's experimental, undocumented <code>feature.udp-egress</code> (Docker's docs say UDP can't be unblocked by policy) plus a per-orb UDP rule to Amp's relays.</p>
+        </div>
+      </div>
+      <p>The upstream-facing ones are written up as notes for Amp and Docker in <code>docs/design-notes.md</code>. If either fixes its side, the matching patch can go.</p>
+    </section>
+
+    <section id="snapshots">
+      <h2>Snapshots</h2>
+      <p>After a new orb finishes repository setup (clone, <code>.agents/setup</code>), Amp's first pause carries a snapshot ID. The dispatch saves the stopped disk as a local template, <code>&lt;host&gt;/amp-orb-snapshot:&lt;id&gt;</code> (<code>&lt;host&gt;</code> is the image namespace hardcoded in the scripts), and new threads in that project boot from it and skip setup. Amp keeps one snapshot per project and orb size, reuses it for up to 72 hours, then refreshes it.</p>
+      <p>The catch: within those 72 hours, new threads boot the image the snapshot was taken from, not the current pin, and a changed <code>.agents/setup</code> doesn't invalidate it either.</p>
+      <p><strong>After an image update</strong>, removing the local copy is enough. Amp's record can stay: the next thread gets the same snapshot ID, finds no local template, boots the pinned one and saves a fresh snapshot under that ID.</p>
+<pre><code># on the host
+sudo -u agent sbx template ls
+sudo -u agent sbx template rm --force docker.io/&lt;host&gt;/amp-orb-snapshot:&lt;id&gt;</code></pre>
+      <p><strong>After a change to a repo's <code>.agents/setup</code></strong>, delete Amp's record, as Amp documents, so the next thread reruns setup (then remove the orphaned local copy as above):</p>
+<pre><code># wherever you use the Amp CLI
+amp projects snapshots delete &lt;owner/repo&gt;</code></pre>
+      <p>Either way, the next thread boots the pinned template, reruns setup and saves a fresh snapshot. Existing orbs keep their image until their threads are deleted; removing a template never breaks an orb created from it.</p>
+    </section>
+
+    <section id="updates">
+      <h2>Updates and rollback</h2>
+      <p>Nothing updates itself. The host's Amp CLI has self-update turned off, and Amp's image is pinned by digest, because Amp's <code>:latest</code> tag moves several times an hour. Both change only through one command, which won't switch unless the candidate image passes the full dispatch dry run. That run uses a fake token, so it tests the image and the dispatch, not the CLI's protocol with Amp; the new CLI is only checked at start-up (and rolled back if it doesn't start within 30 seconds). The Amp CLI <em>inside</em> each orb isn't pinned at all: it updates itself to upstream at bootstrap.</p>
+
+      <figure>
+        <div class="fig-scroll">
+          <svg viewBox="0 0 1000 236" role="img" aria-label="Update flow: install.sh update-orbs re-pins the Amp CLI and orb image, builds the patched template, runs the dispatch dry run on the candidate, and switches the pin only if it passes, keeping the previous pin. If the dry run fails, the current pin stays. rollback-orbs swaps back to the previous pin.">
+            <defs>
+              <marker id="uh-m" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-head"/></marker>
+              <marker id="uh-v" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-head-v"/></marker>
+              <marker id="uh-d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-head-d"/></marker>
+            </defs>
+            <rect x="20" y="30" width="160" height="76" rx="10" class="d-box"/>
+            <text x="100" y="62" text-anchor="middle" class="d-m">./install.sh</text>
+            <text x="100" y="82" text-anchor="middle" class="d-m">update-orbs</text>
+
+            <rect x="216" y="30" width="170" height="76" rx="10" class="d-box"/>
+            <text x="301" y="60" text-anchor="middle" class="d-t">Re-pin upstream</text>
+            <text x="301" y="80" text-anchor="middle" class="d-s">Amp CLI + image digest</text>
+
+            <rect x="422" y="30" width="170" height="76" rx="10" class="d-box"/>
+            <text x="507" y="60" text-anchor="middle" class="d-t">Build template</text>
+            <text x="507" y="80" text-anchor="middle" class="d-s">digest + patch layer</text>
+
+            <rect x="628" y="30" width="150" height="76" rx="10" class="d-box"/>
+            <text x="703" y="60" text-anchor="middle" class="d-t">Dry run</text>
+            <text x="703" y="80" text-anchor="middle" class="d-s">full orb lifecycle</text>
+
+            <rect x="814" y="30" width="166" height="76" rx="10" class="d-vm"/>
+            <text x="897" y="60" text-anchor="middle" class="d-t">Switch the pin</text>
+            <text x="897" y="80" text-anchor="middle" class="d-s">keep the previous one</text>
+
+            <rect x="628" y="160" width="150" height="56" rx="10" class="d-deny"/>
+            <text x="703" y="184" text-anchor="middle" class="d-t">Keep current pin</text>
+            <text x="703" y="202" text-anchor="middle" class="d-s">nothing changes</text>
+
+            <rect x="814" y="160" width="166" height="56" rx="10" class="d-box"/>
+            <text x="897" y="184" text-anchor="middle" class="d-m">rollback-orbs</text>
+            <text x="897" y="202" text-anchor="middle" class="d-s">swap back (or forward)</text>
+
+            <line x1="180" y1="68" x2="212" y2="68" class="d-line" marker-end="url(#uh-m)"/>
+            <line x1="386" y1="68" x2="418" y2="68" class="d-line" marker-end="url(#uh-m)"/>
+            <line x1="592" y1="68" x2="624" y2="68" class="d-line" marker-end="url(#uh-m)"/>
+            <line x1="778" y1="68" x2="810" y2="68" class="d-line-v" marker-end="url(#uh-v)"/>
+            <text x="794" y="58" text-anchor="middle" class="d-s">pass</text>
+            <line x1="703" y1="106" x2="703" y2="156" class="d-line-d" marker-end="url(#uh-d)"/>
+            <text x="712" y="136" class="d-s">fail</text>
+            <line x1="897" y1="106" x2="897" y2="156" class="d-line" marker-end="url(#uh-m)" marker-start="url(#uh-m)"/>
+          </svg>
+        </div>
+        <figcaption><b>A bad orb image can't reach new threads.</b> The provider restarts only if the CLI version changed, which pauses running orbs; an image-only update applies to new orbs without touching running ones.</figcaption>
+      </figure>
+
+      <p>The pin file records the whole stack in four lines:</p>
+<pre><code>digest=sha256:&lt;digest&gt;           # Amp's orb image
+patch=&lt;n&gt;                        # patch revision
+template=docker.io/&lt;host&gt;/amp-orb:&lt;digest&gt;-p&lt;n&gt;
+amp_cli=&lt;version&gt;                # host CLI the provider runs</code></pre>
+      <p>After an update, commit the pin file (<code>ORB_PIN_FILE</code>) and its <code>.previous</code> copy wherever you keep them. The Amp CLI <em>inside</em> each orb isn't pinned; Amp's bootstrap updates it.</p>
+    </section>
+
+    <section id="health">
+      <h2>Keeping it healthy</h2>
+      <ul>
+        <li><strong>Daily canary</strong> (a systemd timer, 11:00–11:15 UTC). A dry run on a throwaway orb: spawn, repeat spawn, pause with snapshot, resume, spawn from snapshot, delete, with each type's size checked, then a check that no sandbox, rule or keep-alive is left behind. It has no alerting of its own: add <code>OnFailure=</code> with a systemd drop-in.</li>
+        <li><strong>Drift check</strong>, part of the canary. Fails if the pinned template is missing or gone upstream, the installed CLI isn't the pinned one, the provider is down or running a replaced binary, self-update isn't off, the UDP flag is off, <code>/usr/bin/git</code> in a current orb is older than 2.40, or an orb's agent has a secret whose name isn't on the host's allowlist. A newer upstream CLI or image is reported, not failed.</li>
+        <li><strong>Status</strong>: <code>./install.sh status</code> lists the pinned stack, disk, drift, the sbx daemon and every orb with its state, type and size, so orphans are visible.</li>
+        <li><strong>Live log</strong>: <code>journalctl -u amp-orb-provider -f</code> shows each job as it runs, with what Amp sent (never the tokens).</li>
+      </ul>
+    </section>
+
+    <section id="security">
+      <h2>Security model</h2>
+      <ul>
+        <li><strong>Launchers on the host, workloads in sandboxes.</strong> Untrusted code, the agent's tool calls, only ever runs inside an sbx microVM. The provider itself runs on the host because it has to drive sbx, but it never executes workload code.</li>
+        <li><strong>Outbound only.</strong> Nothing is reachable from the internet; the provider and orbs only dial out. Put the host on an isolated network segment that can only reach the internet, not the rest of your network, and if you manage it over SSH, accept that only from your own admin machine.</li>
+        <li><strong>The provider token is TPM-bound.</strong> It's a systemd credential encrypted with the host key plus the TPM, decrypted by systemd at start into the service's private credentials directory, which any process running as <code>agent</code> can read. The dispatch drops it before doing anything, so it never reaches an orb.</li>
+        <li><strong>Secrets are watched by name.</strong> As defense in depth, the dispatch records the names, never the values, of the secrets present in each orb's agent environment, and the drift check alerts on any name outside an allowlist.</li>
+        <li><strong>Accepted trade-off:</strong> the orb provider and the runner launcher run as the same <code>agent</code> user, so each could read the other's decrypted credential. Accepted for a single-owner home server.</li>
+      </ul>
+    </section>
+
+    <section id="commands">
+      <h2>Commands</h2>
+      <h3>Start a thread on your provider</h3>
+      <p>In the web app: New Thread → <strong>Orb</strong> → <strong>&lt;provider-name&gt;</strong> under Self-Hosted → optionally an orb type. From the CLI:</p>
+<pre><code>amp -ox "&lt;message&gt;" --orb-provider &lt;provider-name&gt; [--orb-size small]</code></pre>
+      <h3>Good to know, from Amp's docs</h3>
+      <ul>
+        <li><strong>One provider per token.</strong> Run exactly one <code>amp orb provider</code> for each provider token.</li>
+        <li><strong>Orb types are permanent.</strong> A type's name can't be changed, and deleting a type stops threads that use it.</li>
+        <li><strong>When orbs pause:</strong> 5 minutes after the agent finishes, or 20 minutes after your last interaction, whichever is later.</li>
+        <li><strong>The CLI's project choice:</strong> <code>-ox</code> picks the project from the current directory's git remote, and otherwise starts without a repo; pass <code>--project</code> to be explicit. Provider and size flags are ignored when continuing an existing thread. Making your provider the workspace's default removes the need for the flag.</li>
+      </ul>
+      <h3>Operate it (on the host, from this repo)</h3>
+<pre><code>export ORB_PIN_FILE=/abs/path/amp-orb.pin
+./install.sh status          # everything at a glance
+./install.sh canary-run      # the daily canary, now
+./install.sh update-orbs     # re-pin, build, test, switch
+./install.sh rollback-orbs   # back to the previous pin
+journalctl -u amp-orb-provider -f</code></pre>
+      <div class="note"><p><strong>Restarting the provider</strong> pauses running orbs; they resume on the next message. <strong>Restarting <code>sbx-daemon</code></strong> stops every sandbox, orbs and CI jobs alike.</p></div>
+    </section>
+
+    <footer>
+      Built from the <code>sbx-orb-provider</code> repo (scripts, units and <code>docs/design-notes.md</code>; the image pin stays with each host), and Amp's <a href="https://ampcode.com/docs/orbs/self-hosted">self-hosted orb docs</a>. Observed on sbx v0.50.1 · patch revision 3 · November 2026.
+    </footer>
+  </main>
+</div>
+</body>
+</html>

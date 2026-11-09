@@ -1,0 +1,6 @@
+# Example only. The real pin is written by `install.sh update-orbs` and kept by
+# the host, at the path given in ORB_PIN_FILE.
+digest=sha256:0000000000000000000000000000000000000000000000000000000000000000
+patch=3
+template=localhost/amp-orb:000000000000-p3
+amp_cli=0.0.0-example

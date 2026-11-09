@@ -1,0 +1,23 @@
+# The pin belongs to the host, not this repo.
+amp-orb.pin
+amp-orb.pin.previous
+amp-orb.pin.candidate
+
+*.log
+*.tar
+*.tar.gz
+run/
+*.lock
+
+# Credentials never go here.
+*.cred
+credstore*/
+.env
+.env.*
+*.pem
+*.key
+id_*
+
+*~
+*.swp
+.DS_Store
