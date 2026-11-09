@@ -107,7 +107,7 @@ Steps:
    ```
 
 3. Store the provider token as an encrypted credential. With TPM binding,
-   run this and give the token on standard input:
+   run this, paste the token, press Enter, then press Ctrl-D to finish:
 
    ```sh
    sudo systemd-creds encrypt --with-key=host+tpm2 --name=amp-orb-provider-token \
@@ -270,8 +270,8 @@ Some hosts are blocked, and repository setup works anyway:
 
 If an orb needs another host, add it to the dispatch's per-orb rules, never
 to the global policy: widening the global policy widens every sandbox on the
-host. Details are in docs/design-notes.md, "Orb network: what setup really
-needs".
+host. Details are in [docs/design-notes.md](docs/design-notes.md), "Orb
+network: what setup really needs".
 
 ### Low disk
 
